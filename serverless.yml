@@ -1,0 +1,71 @@
+service: serverless-image-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'us-east-1'}
+  environment:
+    RAW_BUCKET: srvls-img-raw-${self:provider.stage}-8432
+    PROCESSED_BUCKET: srvls-img-processed-${self:provider.stage}-8432
+
+plugins:
+  - serverless-iam-roles-per-function
+
+functions:
+  uploader:
+    handler: src/uploader.handler
+    events:
+      - httpApi:
+          path: /upload-url
+          method: get
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+        Resource: "arn:aws:s3:::${self:provider.environment.RAW_BUCKET}/*"
+
+  processor:
+    handler: src/processor.handler
+    events:
+      - s3:
+          bucket: ${self:provider.environment.RAW_BUCKET}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .jpg
+          cors:
+            CorsRules:
+              - AllowedHeaders:
+                  - "*"
+                AllowedMethods:
+                  - PUT
+                AllowedOrigins:
+                  - "*"
+      - s3:
+          bucket: ${self:provider.environment.RAW_BUCKET}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .jpeg
+      - s3:
+          bucket: ${self:provider.environment.RAW_BUCKET}
+          event: s3:ObjectCreated:*
+          rules:
+            - suffix: .png
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - s3:GetObject
+        Resource: "arn:aws:s3:::${self:provider.environment.RAW_BUCKET}/*"
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+        Resource: "arn:aws:s3:::${self:provider.environment.PROCESSED_BUCKET}/*"
+
+resources:
+  Resources:
+    ProcessedBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.PROCESSED_BUCKET}
